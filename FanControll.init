@@ -12,7 +12,7 @@
 case "$1" in
 	start)
 	    echo "- Fan Controll wird gestartet"
-            sleep 40s && /etc/FanControll.sh &
+            sleep 120s && /etc/FanControll.sh &
 	    ;;
 	stop)
             echo "noip wird beendet"

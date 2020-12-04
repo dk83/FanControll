@@ -10,13 +10,13 @@ CPU_Min="361"; CPU_Max="450";
 # Settings for Case Fan
 CASE_Min="232"; CASE_Max="350";
 # Minimum:  CPU Temperature |  Case Temperature
-CpuTempMin="48";
+CpuTempMin="55";
 # TempMax: Max System Temperature | TempFail: Hardware Protection Temperature
-TempFail="65";
+TempFail="68";
 # Read DS18B20 Sensore from OneWire for Case Temperature from gpio:4
 DS18B20="28-00000b2a78ee";
 ###   Speed Logging   ###
-Log="/var/log/Do/FanControll.log";
+Log="/var/log/Do/FanControll.log"; sudo chown $USER:$USER $Log;
 CpuLog="/var/log/Do/CpuSpeed";
 CaseLog="/var/log/Do/CaseSpeed";
 if ! [ -d "/var/log/Do" ]; then sudo mkdir "/var/log/Do"; sudo chown -R $USER:$USER "/var/log/Do"; fi
@@ -30,6 +30,7 @@ IntFan() { gpio -g mode 18 pwm; gpio -g mode 19 pwm; }
 Write() { now="$(date +%H:%M:%S)"; echo -e "${now} |->  $1" >> $Log; }
 ###   Intern Variables   ###
 RE=0; CpuTemp=0; CaseTemp=0; CpuSpeed=0; CaseSpeed=0;
+Time="5";
 #
 
 ###   FailSave: disable overclocking   ###
@@ -51,7 +52,7 @@ FailSave() {
 ###   Get Temperature   ###
 GetCpuTemp() {
     val="$(vcgencmd measure_temp | tr -d 'temp=')";
-    CpuTemp=(${val//.0\'C/});
+    CpuTemp=(${val//.**C});
     return "$CpuTemp";
 }
 GetCaseTemp() {
@@ -66,24 +67,28 @@ Status() {
 SetCpuFanSpeed() {
     GetCpuTemp; x=0;
     CpuStep="$(( ($CPU_Max - $CPU_Min) / ($TempFail - $CpuTempMin) ))";
-    while (( "$CpuTempMin" != "$CpuTemp" )); do
+    while (( ${CpuTempMin} != ${CpuTemp} )); do
         x="$(($x+1))";
         if [[ "$(( $CpuTempMin + $x))" == "$CpuTemp" ]]; then
              ###   Set CASE   ###
-             CaseSpeed="$(( $CASE_Min + ( $x * 4 ) ))"; CaseSpeed="$CaseSpeed";
+             CaseSpeed="$(( $CASE_Min + ( ($x *4) + 12 ) ))";
+             CaseSpeed="$CaseSpeed";
              ###   Set CPU   ###
-             if [[ "$x" -gt "2" ]]; then
-                  CpuSpeed="$(( $CPU_Min + ( $x * $CpuStep) ))"; CpuSpeed="$CpuSpeed";
-                 Status;
-             else CpuSpeed="$(($CPU_Min + 15))"; fi
+             if [[ "$x" -gt "9" ]]; then
+                 CpuSpeed="$(( $CPU_Min + ( $x * $CpuStep * 2) ))";
+                 CpuSpeed="$CpuSpeed"; Status; Time="2";
+             elif [[ "$x" -gt "2" ]]; then
+                 CpuSpeed="$(( $CPU_Min + ( $x * $CpuStep) ))";
+                 CpuSpeed="$CpuSpeed"; Status; Time="4";
+             else CpuSpeed="$(($CPU_Min + 10))"; Time="6"; fi
              break;
         elif [[ "$CpuTemp" < "$(($CpuTempMin + 1))" ]]; then
-            if [[ "$CpuTemp" < "$(( $CpuTempMin - 1 ))" ]]; then CpuSpeed="0"; CaseSpeed="$(( $CASE_Min + 12 ))";
-            elif [[ "$CpuTemp" < "$(( $CpuTempMin ))" ]]; then CpuSpeed="$(($CPU_Min + 2 ))"; CaseSpeed="$(( $CASE_Min + 12 ))";
-            else CpuSpeed="$(($CPU_Min + 2 ))"; CaseSpeed="$(( $CASE_Min + 16 ))"; fi
+            if [[ "$CpuTemp" < "$(( $CpuTempMin - 1 ))" ]]; then CpuSpeed="$(($CPU_Min - 10 ))"; CaseSpeed="$(( $CASE_Min + 12 ))"; Time="16";
+            elif [[ "$CpuTemp" < "$(( $CpuTempMin ))" ]]; then CpuSpeed="$(($CPU_Min + 2 ))"; CaseSpeed="$(( $CASE_Min + 16 ))"; Time="12";
+            else CpuSpeed="$(($CPU_Min + 8 ))"; CaseSpeed="$(( $CASE_Min + 22 ))"; Time="8"; fi
             break;
-        elif [[ "$CpuTemp" > "$(($TempFail - 1))" ]]; then FailSave; sleep 5s; break; fi
-        sleep 1s;
+        elif [[ "$CpuTemp" > "$(($TempFail - 1))" ]]; then FailSave; break;
+        else sleep 6s; fi
     done
 }
 #
@@ -94,6 +99,7 @@ Write "FanControll.sh geladen <-|";
 while true; do
         IntFan;
 	SetCpuFanSpeed;
-        CPU "$CpuSpeed"; CASE "$CaseSpeed";
-        sleep 5s;
+        CPU "$CpuSpeed";
+        CASE "$CaseSpeed";
+        sleep "${Time}s";
 done
